@@ -95,43 +95,53 @@ export class HistoryService {
       out center;
     `;
 
-    try {
-      this.logger.log(`Querying Overpass mirror for ${lat}, ${lon}`);
-      const response = await axios.post<OverpassResponse>(
-        'https://overpass.kumi.systems/api/interpreter',
-        query,
-        {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': 'ChronosPathApp/1.0 (contact@example.com)'
-          },
-          timeout: 25000 // 25 segundos
-        }
-      );
-      const elements = response.data.elements;
+    const endpoints = [
+      'https://overpass-api.de/api/interpreter',
+      'https://lz4.overpass-api.de/api/interpreter',
+      'https://z.overpass-api.de/api/interpreter',
+      'https://overpass.kumi.systems/api/interpreter'
+    ];
 
-      return elements
-        .map((el) => {
-          const type = el.tags.historic || el.tags.heritage || el.tags.tourism || 'local_historico';
-          
-          return {
-            id: el.id,
-            name: el.tags.name || this.formatTypeName(type),
-            lat: el.lat || el.center?.lat || 0,
-            lon: el.lon || el.center?.lon || 0,
-            type: type,
-          };
-        })
-        .filter((el) => el.name !== 'local_historico' && el.lat !== 0);
-    } catch (error) {
-      if (error.response) {
-        this.logger.error(`Overpass API Error Status: ${error.response.status}`);
-        this.logger.error(`Overpass API Error Data: ${JSON.stringify(error.response.data)}`);
-      } else {
-        this.logger.error('Error fetching from Overpass API (No response)', error.message);
+    for (const url of endpoints) {
+      try {
+        this.logger.log(`Querying Overpass mirror: ${url}`);
+        const response = await axios.post<OverpassResponse>(
+          url,
+          query,
+          {
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'User-Agent': 'ChronosPathApp/1.0 (contact@example.com)'
+            },
+            timeout: 20000 // 20 segundos
+          }
+        );
+
+        if (response.data && response.data.elements) {
+          const elements = response.data.elements;
+          return elements
+            .map((el) => {
+              const type = el.tags.historic || el.tags.heritage || el.tags.tourism || 'local_historico';
+              
+              return {
+                id: el.id,
+                name: el.tags.name || this.formatTypeName(type),
+                lat: el.lat || el.center?.lat || 0,
+                lon: el.lon || el.center?.lon || 0,
+                type: type,
+              };
+            })
+            .filter((el) => el.name !== 'local_historico' && el.lat !== 0);
+        }
+      } catch (error) {
+        const status = error.response?.status || 'No Response';
+        this.logger.warn(`Failed to fetch from Overpass mirror ${url}: Status ${status}`);
+        // Continua para o próximo mirror
       }
-      throw new BadGatewayException('Falha ao buscar locais no OpenStreetMap');
     }
+
+    this.logger.error('All Overpass mirrors failed');
+    throw new BadGatewayException('Falha ao buscar locais no OpenStreetMap (Todos os mirrors falharam)');
   }
 
   private formatTypeName(type: string): string {
