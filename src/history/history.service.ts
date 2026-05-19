@@ -81,9 +81,6 @@ export class HistoryService {
     const apiKey = this.configService.get<string>('RAPIDAPI_KEY') || 'adcb31c965msh4aba55b40daf8e5p1b8319jsn93ddea59ef48';
     
     try {
-      // Usando o endpoint de 'searchNearby' do Google Places V2 via RapidAPI
-      // Nota: O endpoint de autocomplete que você mandou é para busca de texto. 
-      // Para o mapa, o ideal é o 'searchNearby' ou 'searchText' filtrado por tipo.
       const response = await axios.post(
         'https://google-map-places-new-v2.p.rapidapi.com/v1/places:searchText',
         {
@@ -109,17 +106,64 @@ export class HistoryService {
 
       const places = response.data.places || [];
 
-      return places.map((p: any) => ({
-        id: p.id,
-        name: p.displayName?.text || 'Local Histórico',
-        lat: p.location?.latitude || 0,
-        lon: p.location?.longitude || 0,
-        type: p.types?.[0] || 'landmark'
-      })).filter((p: any) => p.lat !== 0);
+      // Filtro adicional para garantir que os resultados estão minimamente próximos
+      // (Google searchText às vezes retorna resultados globais se não achar nada perto)
+      return places
+        .filter((p: any) => {
+          if (!p.location) return false;
+          const dist = Math.sqrt(
+            Math.pow(p.location.latitude - lat, 2) + 
+            Math.pow(p.location.longitude - lon, 2)
+          );
+          return dist < 0.5; // Aproximadamente 50km de margem
+        })
+        .map((p: any) => ({
+          id: p.id,
+          name: p.displayName?.text || 'Local Histórico',
+          lat: p.location?.latitude || 0,
+          lon: p.location?.longitude || 0,
+          type: p.types?.[0] || 'landmark'
+        }));
 
     } catch (error) {
-      this.logger.error('RapidAPI Google Places Error', error.response?.data || error.message);
-      throw new BadGatewayException('Falha ao buscar locais via Google Places API');
+      this.logger.error('RapidAPI Google Places Error', error.message);
+      
+      // Fallback para WikiData se a cota do RapidAPI estourar
+      return this.findNearbyWikiData(lat, lon);
+    }
+  }
+
+  private async findNearbyWikiData(lat: number, lon: number) {
+    this.logger.log('Falling back to WikiData...');
+    const sparqlQuery = `
+      SELECT ?place ?placeLabel ?location ?instanceLabel WHERE {
+        SERVICE wikibase:around {
+          ?place wdt:P625 ?location .
+          bd:serviceParam wikibase:center "Point(${lon} ${lat})"^^geo:wktLiteral .
+          bd:serviceParam wikibase:radius "2" .
+        }
+        ?place wdt:P31 ?instance .
+        VALUES ?instance { wd:q4989906 wd:q500362 wd:q108113 wd:q83474 wd:q23413 wd:q41176 wd:q174782 wd:q928830 }
+        SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],pt-br,en". }
+      } LIMIT 20
+    `;
+    try {
+      const response = await axios.get('https://query.wikidata.org/sparql', {
+        params: { query: sparqlQuery, format: 'json' },
+        headers: { 'Accept': 'application/sparql-results+json', 'User-Agent': 'ChronosPathApp/1.0' }
+      });
+      return (response.data.results?.bindings || []).map((b: any) => {
+        const locationMatch = b.location.value.match(/Point\(([-\d.]+) ([-\d.]+)\)/);
+        return {
+          id: b.place.value.split('/').pop(),
+          name: b.placeLabel.value,
+          lat: locationMatch ? parseFloat(locationMatch[2]) : 0,
+          lon: locationMatch ? parseFloat(locationMatch[1]) : 0,
+          type: b.instanceLabel.value
+        };
+      });
+    } catch (e) {
+      throw new BadGatewayException('Todas as fontes de dados falharam');
     }
   }
 
