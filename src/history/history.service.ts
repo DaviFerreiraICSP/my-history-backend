@@ -99,26 +99,45 @@ export class HistoryService {
       'https://overpass-api.de/api/interpreter',
       'https://lz4.overpass-api.de/api/interpreter',
       'https://z.overpass-api.de/api/interpreter',
-      'https://overpass.kumi.systems/api/interpreter'
+      'https://overpass.kumi.systems/api/interpreter',
+      'https://overpass.nchc.org.tw/api/interpreter',
+      'https://overpass.osm.ch/api/interpreter',
+      'https://overpass.debian.net/api/interpreter'
     ];
 
-    for (const url of endpoints) {
+    // Embaralha levemente para não bater sempre no mesmo primeiro
+    const shuffledEndpoints = [...endpoints].sort(() => Math.random() - 0.5);
+
+    for (const url of shuffledEndpoints) {
       try {
-        this.logger.log(`Querying Overpass mirror: ${url}`);
-        const response = await axios.post<OverpassResponse>(
+        this.logger.log(`Trying Overpass mirror: ${url}`);
+        
+        // Tenta POST primeiro
+        let response = await axios.post<OverpassResponse>(
           url,
           query,
           {
             headers: {
               'Content-Type': 'application/x-www-form-urlencoded',
-              'User-Agent': 'ChronosPathApp/1.0 (contact@example.com)'
+              'User-Agent': 'ChronosPathApp/1.1 (contact@example.com; critical historical research app)'
             },
-            timeout: 20000 // 20 segundos
+            timeout: 15000 
           }
         );
 
-        if (response.data && response.data.elements) {
+        // Se falhar ou vier vazio, tenta GET no mesmo mirror (alguns firewalls barram POST)
+        if (!response.data || !response.data.elements || response.data.elements.length === 0) {
+          this.logger.log(`POST returned no data from ${url}, trying GET...`);
+          const getUrl = `${url}?data=${encodeURIComponent(query)}`;
+          response = await axios.get<OverpassResponse>(getUrl, {
+            headers: { 'User-Agent': 'ChronosPathApp/1.1' },
+            timeout: 15000
+          });
+        }
+
+        if (response.data && response.data.elements && response.data.elements.length > 0) {
           const elements = response.data.elements;
+          this.logger.log(`Success! Found ${elements.length} elements from ${url}`);
           return elements
             .map((el) => {
               const type = el.tags.historic || el.tags.heritage || el.tags.tourism || 'local_historico';
@@ -134,9 +153,8 @@ export class HistoryService {
             .filter((el) => el.name !== 'local_historico' && el.lat !== 0);
         }
       } catch (error) {
-        const status = error.response?.status || 'No Response';
-        this.logger.warn(`Failed to fetch from Overpass mirror ${url}: Status ${status}`);
-        // Continua para o próximo mirror
+        const status = error.response?.status || 'No Response/Timeout';
+        this.logger.warn(`Mirror ${url} failed: ${status}`);
       }
     }
 
