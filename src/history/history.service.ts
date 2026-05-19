@@ -99,6 +99,13 @@ export class HistoryService {
       const response = await axios.post<OverpassResponse>(
         'https://overpass-api.de/api/interpreter',
         query,
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': 'ChronosPathApp/1.0 (contact@example.com)'
+          },
+          timeout: 20000 // 20 segundos
+        }
       );
       const elements = response.data.elements;
 
