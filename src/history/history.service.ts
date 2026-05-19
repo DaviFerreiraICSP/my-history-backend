@@ -76,90 +76,51 @@ export class HistoryService {
   }
 
   async findNearby(lat: number, lon: number) {
-    this.logger.log(`Finding nearby historical sites for ${lat}, ${lon}`);
-    const radius = 2000; // 2km radius
+    this.logger.log(`Finding nearby historical sites for ${lat}, ${lon} using Google Places via RapidAPI`);
     
-    const query = `
-      [out:json][timeout:25];
-      (
-        node(around:${radius}, ${lat}, ${lon})["historic"];
-        way(around:${radius}, ${lat}, ${lon})["historic"];
-        relation(around:${radius}, ${lat}, ${lon})["historic"];
-        
-        node(around:${radius}, ${lat}, ${lon})["heritage"];
-        way(around:${radius}, ${lat}, ${lon})["heritage"];
-        
-        node(around:${radius}, ${lat}, ${lon})["tourism"="museum"];
-        way(around:${radius}, ${lat}, ${lon})["tourism"="museum"];
-      );
-      out center;
-    `;
-
-    const endpoints = [
-      'https://overpass-api.de/api/interpreter',
-      'https://lz4.overpass-api.de/api/interpreter',
-      'https://z.overpass-api.de/api/interpreter',
-      'https://overpass.kumi.systems/api/interpreter',
-      'https://overpass.nchc.org.tw/api/interpreter',
-      'https://overpass.osm.ch/api/interpreter',
-      'https://overpass.debian.net/api/interpreter'
-    ];
-
-    // Embaralha levemente para não bater sempre no mesmo primeiro
-    const shuffledEndpoints = [...endpoints].sort(() => Math.random() - 0.5);
-
-    for (const url of shuffledEndpoints) {
-      try {
-        this.logger.log(`Trying Overpass mirror: ${url}`);
-        
-        // Tenta POST primeiro
-        let response = await axios.post<OverpassResponse>(
-          url,
-          query,
-          {
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-              'User-Agent': 'ChronosPathApp/1.1 (contact@example.com; critical historical research app)'
-            },
-            timeout: 15000 
+    const apiKey = this.configService.get<string>('RAPIDAPI_KEY') || 'adcb31c965msh4aba55b40daf8e5p1b8319jsn93ddea59ef48';
+    
+    try {
+      // Usando o endpoint de 'searchNearby' do Google Places V2 via RapidAPI
+      // Nota: O endpoint de autocomplete que você mandou é para busca de texto. 
+      // Para o mapa, o ideal é o 'searchNearby' ou 'searchText' filtrado por tipo.
+      const response = await axios.post(
+        'https://google-map-places-new-v2.p.rapidapi.com/v1/places:searchText',
+        {
+          textQuery: 'historical landmarks and monuments',
+          locationBias: {
+            circle: {
+              center: { latitude: lat, longitude: lon },
+              radius: 2000
+            }
+          },
+          languageCode: 'pt-BR',
+          maxResultCount: 20
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-FieldMask': 'places.id,places.displayName,places.location,places.types',
+            'x-rapidapi-host': 'google-map-places-new-v2.p.rapidapi.com',
+            'x-rapidapi-key': apiKey
           }
-        );
-
-        // Se falhar ou vier vazio, tenta GET no mesmo mirror (alguns firewalls barram POST)
-        if (!response.data || !response.data.elements || response.data.elements.length === 0) {
-          this.logger.log(`POST returned no data from ${url}, trying GET...`);
-          const getUrl = `${url}?data=${encodeURIComponent(query)}`;
-          response = await axios.get<OverpassResponse>(getUrl, {
-            headers: { 'User-Agent': 'ChronosPathApp/1.1' },
-            timeout: 15000
-          });
         }
+      );
 
-        if (response.data && response.data.elements && response.data.elements.length > 0) {
-          const elements = response.data.elements;
-          this.logger.log(`Success! Found ${elements.length} elements from ${url}`);
-          return elements
-            .map((el) => {
-              const type = el.tags.historic || el.tags.heritage || el.tags.tourism || 'local_historico';
-              
-              return {
-                id: el.id,
-                name: el.tags.name || this.formatTypeName(type),
-                lat: el.lat || el.center?.lat || 0,
-                lon: el.lon || el.center?.lon || 0,
-                type: type,
-              };
-            })
-            .filter((el) => el.name !== 'local_historico' && el.lat !== 0);
-        }
-      } catch (error) {
-        const status = error.response?.status || 'No Response/Timeout';
-        this.logger.warn(`Mirror ${url} failed: ${status}`);
-      }
+      const places = response.data.places || [];
+
+      return places.map((p: any) => ({
+        id: p.id,
+        name: p.displayName?.text || 'Local Histórico',
+        lat: p.location?.latitude || 0,
+        lon: p.location?.longitude || 0,
+        type: p.types?.[0] || 'landmark'
+      })).filter((p: any) => p.lat !== 0);
+
+    } catch (error) {
+      this.logger.error('RapidAPI Google Places Error', error.response?.data || error.message);
+      throw new BadGatewayException('Falha ao buscar locais via Google Places API');
     }
-
-    this.logger.error('All Overpass mirrors failed');
-    throw new BadGatewayException('Falha ao buscar locais no OpenStreetMap (Todos os mirrors falharam)');
   }
 
   private formatTypeName(type: string): string {
