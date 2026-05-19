@@ -2,10 +2,9 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// Para usar Postgres (ex: Neon/Supabase), alteramos de sqlite para postgresql.
-// O banco URL ficará na variável DATABASE_URL no .env
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model LocationStory {
@@ -14,6 +13,8 @@ model LocationStory {
   latitude  Float
   longitude Float
   story     String   @db.Text
+  photoUrl  String?  @db.Text
+  wikiUrl   String?  @db.Text
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
