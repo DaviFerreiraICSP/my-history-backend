@@ -96,15 +96,16 @@ export class HistoryService {
     `;
 
     try {
+      this.logger.log(`Querying Overpass mirror for ${lat}, ${lon}`);
       const response = await axios.post<OverpassResponse>(
-        'https://overpass-api.de/api/interpreter',
+        'https://overpass.kumi.systems/api/interpreter',
         query,
         {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             'User-Agent': 'ChronosPathApp/1.0 (contact@example.com)'
           },
-          timeout: 20000 // 20 segundos
+          timeout: 25000 // 25 segundos
         }
       );
       const elements = response.data.elements;
@@ -123,7 +124,12 @@ export class HistoryService {
         })
         .filter((el) => el.name !== 'local_historico' && el.lat !== 0);
     } catch (error) {
-      this.logger.error('Error fetching from Overpass API', error);
+      if (error.response) {
+        this.logger.error(`Overpass API Error Status: ${error.response.status}`);
+        this.logger.error(`Overpass API Error Data: ${JSON.stringify(error.response.data)}`);
+      } else {
+        this.logger.error('Error fetching from Overpass API (No response)', error.message);
+      }
       throw new BadGatewayException('Falha ao buscar locais no OpenStreetMap');
     }
   }
