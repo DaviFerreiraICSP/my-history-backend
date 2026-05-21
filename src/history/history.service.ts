@@ -100,17 +100,45 @@ export class HistoryService {
         places = await wikiSearch('en');
       }
 
-      return places.map((p: any) => ({
+      // Deduplicar por coordenadas exatas (artigos genéricos da Wikipedia usam coord da cidade)
+      const seen = new Set<string>();
+      const unique = places.filter((p: any) => {
+        const key = `${p.lat.toFixed(4)},${p.lon.toFixed(4)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      return unique.map((p: any) => ({
         id: String(p.pageid),
-        name: p.title,
+        name: this.cleanWikiTitle(p.title),
         lat: p.lat,
         lon: p.lon,
-        type: 'historical_landmark',
+        type: this.inferTypeFromTitle(p.title),
       }));
     } catch (error) {
       this.logger.error('Wikipedia Geosearch Error', error.message);
       return this.findNearbyWikiData(lat, lon);
     }
+  }
+
+  private cleanWikiTitle(title: string): string {
+    // Remove disambiguation parenthetical: "Praça da Sé (São Paulo)" → "Praça da Sé"
+    return title.replace(/\s*\([^)]+\)\s*$/, '').trim();
+  }
+
+  private inferTypeFromTitle(title: string): string {
+    const t = title.toLowerCase();
+    if (/catedral|basílica|basilica|igreja|chapel|church|mosteiro|monastery/.test(t)) return 'church';
+    if (/museu|museum|pinacoteca|galeria/.test(t)) return 'museum';
+    if (/castelo|castle|forte|fort|fortaleza|cidadela/.test(t)) return 'castle';
+    if (/memorial|cemitério|cemiterio/.test(t)) return 'memorial';
+    if (/ruína|ruins|sítio arqueológico|archaeological/.test(t)) return 'ruins';
+    if (/campo de batalha|battlefield/.test(t)) return 'battlefield';
+    if (/palácio|palacio|palace/.test(t)) return 'monument';
+    if (/praça|square|plaza|largo|jardim|parque/.test(t)) return 'monument';
+    if (/monumento|monument|estátua|statue|obelisco/.test(t)) return 'monument';
+    return 'historical_landmark';
   }
 
   private async findNearbyWikiData(lat: number, lon: number) {
