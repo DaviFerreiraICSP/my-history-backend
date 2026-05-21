@@ -135,6 +135,8 @@ export class HistoryService {
     if (/memorial|cemitério|cemiterio/.test(t)) return 'memorial';
     if (/ruína|ruins|sítio arqueológico|archaeological/.test(t)) return 'ruins';
     if (/campo de batalha|battlefield/.test(t)) return 'battlefield';
+    if (/estação|station|terminal ferroviário|terminal rodoviário|metrô|metro|ferrovia/.test(t)) return 'station';
+    if (/\bbairro\b|distrito|district|vila |vila$/.test(t)) return 'district';
     if (/palácio|palacio|palace/.test(t)) return 'monument';
     if (/praça|square|plaza|largo|jardim|parque/.test(t)) return 'monument';
     if (/monumento|monument|estátua|statue|obelisco/.test(t)) return 'monument';
