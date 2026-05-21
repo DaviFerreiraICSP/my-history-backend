@@ -257,28 +257,27 @@ export class HistoryService {
   }
 
   private async fetchWikiData(name: string): Promise<{ photoUrl: string | null, wikiUrl: string | null }> {
-    try {
-      const headers = {
-        'User-Agent': 'ChronosPathApp/1.0 (contact@example.com) Axios/1.16.0'
-      };
+    const headers = { 'User-Agent': 'OurHistoryApp/1.0 (contact@example.com)' };
 
-      // 1. Tenta buscar dados pelo título exato
-      const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&prop=pageimages|info|pageterms&piprop=original&inprop=url&titles=${encodeURIComponent(name)}&origin=*`;
-      const response = await axios.get(url, { headers });
-      
-      let page = response.data?.query?.pages?.[0];
-      
-      // 2. Se não encontrar, tenta uma busca geral
-      if (!page || page.missing) {
-        const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&generator=search&gsrsearch=${encodeURIComponent(name)}&gsrlimit=1&prop=pageimages|info&piprop=original&inprop=url&origin=*`;
-        const searchResponse = await axios.get(searchUrl, { headers });
-        page = searchResponse.data?.query?.pages?.[0];
-      }
-      
-      return {
-        photoUrl: page?.original?.source || null,
-        wikiUrl: page?.fullurl || null
-      };
+    const fetchExact = async (lang: string) => {
+      const url = `https://${lang}.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&prop=pageimages|info&piprop=original&inprop=url&titles=${encodeURIComponent(name)}&origin=*`;
+      const res = await axios.get(url, { headers, timeout: 8000 });
+      const page = res.data?.query?.pages?.[0];
+      if (!page || page.missing) return null;
+      return { photoUrl: page?.original?.source || null, wikiUrl: page?.fullurl || null };
+    };
+
+    try {
+      // Prioriza pt.wikipedia.org (fonte dos nossos locais) com exact match
+      const pt = await fetchExact('pt');
+      if (pt?.wikiUrl) return pt;
+
+      // Tenta en.wikipedia.org com exact match
+      const en = await fetchExact('en');
+      if (en?.wikiUrl) return en;
+
+      // Sem resultado exato: retorna null em vez de busca fuzzy (evita foto/link errado)
+      return { photoUrl: null, wikiUrl: null };
     } catch (error) {
       this.logger.warn(`Could not fetch wiki data for ${name}`, error.message);
       return { photoUrl: null, wikiUrl: null };
