@@ -193,43 +193,16 @@ export class HistoryService {
   async getStory(name: string, lat: number, lon: number, lang: string = 'pt-BR') {
     this.logger.log(`Getting story for ${name} in ${lang}`);
 
-    const cacheKey = `${name}_${lang}`;
-
-    // Check cache
-    const cachedStory = await this.prisma.locationStory.findUnique({
-      where: { name: cacheKey },
-    });
-
-    if (cachedStory) {
-      this.logger.log(`Returning cached story for ${cacheKey}`);
-      return cachedStory;
-    }
-
-    // Generate new story and fetch wiki data in parallel
-    this.logger.log(`Generating new story and fetching wiki data for ${name} in ${lang}`);
-
     const [storyText, wikiData] = await Promise.all([
       this.generateStoryContent(name, lat, lon, lang),
-      this.fetchWikiData(name)
+      this.fetchWikiData(name),
     ]);
 
-    try {
-      const newStory = await this.prisma.locationStory.create({
-        data: {
-          name: cacheKey,
-          latitude: lat,
-          longitude: lon,
-          story: storyText,
-          photoUrl: wikiData.photoUrl,
-          wikiUrl: wikiData.wikiUrl,
-        },
-      });
-
-      return newStory;
-    } catch (error) {
-      this.logger.error('Error saving story to database', error);
-      throw new InternalServerErrorException('Falha ao salvar crônica histórica');
-    }
+    return {
+      story: storyText,
+      photoUrl: wikiData.photoUrl,
+      wikiUrl: wikiData.wikiUrl,
+    };
   }
 
   private async generateStoryContent(name: string, lat: number, lon: number, lang: string): Promise<string> {
