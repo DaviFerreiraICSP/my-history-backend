@@ -63,7 +63,7 @@ describe('HistoryService', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].name).toBe('Catedral Metropolitana de São Paulo');
-      expect(result[0].type).toBe('historical_landmark');
+      expect(result[0].type).toBe('church');
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(mockedAxios.get).toHaveBeenCalled();
     });
