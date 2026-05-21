@@ -76,59 +76,36 @@ export class HistoryService {
   }
 
   async findNearby(lat: number, lon: number) {
-    this.logger.log(`Finding nearby historical sites for ${lat}, ${lon} using Google Places via RapidAPI`);
-    
-    const apiKey = this.configService.get<string>('RAPIDAPI_KEY') || 'adcb31c965msh4aba55b40daf8e5p1b8319jsn93ddea59ef48';
-    
+    this.logger.log(`Finding nearby historical sites for ${lat}, ${lon} using Overpass API`);
+
+    const query = `[out:json][timeout:25];(node["historic"](around:3000,${lat},${lon});way["historic"](around:3000,${lat},${lon});relation["historic"](around:3000,${lat},${lon}););out center 20;`;
+
     try {
       const response = await axios.post(
-        'https://google-map-places-new-v2.p.rapidapi.com/v1/places:searchText',
-        {
-          textQuery: 'historical landmarks and monuments',
-          locationBias: {
-            circle: {
-              center: { latitude: lat, longitude: lon },
-              radius: 2000
-            }
-          },
-          languageCode: 'pt-BR',
-          maxResultCount: 20
-        },
+        'https://overpass-api.de/api/interpreter',
+        `data=${encodeURIComponent(query)}`,
         {
           headers: {
-            'Content-Type': 'application/json',
-            'X-Goog-FieldMask': 'places.id,places.displayName,places.location,places.types',
-            'x-rapidapi-host': 'google-map-places-new-v2.p.rapidapi.com',
-            'x-rapidapi-key': apiKey
-          }
-        }
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': 'OurHistoryApp/1.0 (contact@example.com)',
+          },
+          timeout: 30000,
+        },
       );
 
-      const places = response.data.places || [];
+      const elements: OverpassElement[] = response.data.elements || [];
 
-      // Filtro adicional para garantir que os resultados estão minimamente próximos
-      // (Google searchText às vezes retorna resultados globais se não achar nada perto)
-      return places
-        .filter((p: any) => {
-          if (!p.location) return false;
-          const dist = Math.sqrt(
-            Math.pow(p.location.latitude - lat, 2) + 
-            Math.pow(p.location.longitude - lon, 2)
-          );
-          return dist < 0.5; // Aproximadamente 50km de margem
-        })
-        .map((p: any) => ({
-          id: p.id,
-          name: p.displayName?.text || 'Local Histórico',
-          lat: p.location?.latitude || 0,
-          lon: p.location?.longitude || 0,
-          type: p.types?.[0] || 'landmark'
+      return elements
+        .filter((el) => el.tags?.name)
+        .map((el) => ({
+          id: String(el.id),
+          name: el.tags.name,
+          lat: el.lat ?? el.center?.lat ?? 0,
+          lon: el.lon ?? el.center?.lon ?? 0,
+          type: el.tags.historic || el.tags.tourism || 'landmark',
         }));
-
     } catch (error) {
-      this.logger.error('RapidAPI Google Places Error', error.message);
-      
-      // Fallback para WikiData se a cota do RapidAPI estourar
+      this.logger.error('Overpass API Error', error.message);
       return this.findNearbyWikiData(lat, lon);
     }
   }

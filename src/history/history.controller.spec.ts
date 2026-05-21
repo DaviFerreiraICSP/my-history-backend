@@ -50,6 +50,7 @@ describe('HistoryController', () => {
         dto.name,
         dto.lat,
         dto.lon,
+        'pt-BR',
       );
     });
   });

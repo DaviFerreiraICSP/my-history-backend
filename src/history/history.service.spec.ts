@@ -43,16 +43,18 @@ describe('HistoryService', () => {
 
   describe('findNearby', () => {
     it('should return historical places from Overpass API', async () => {
-      const mockElements = [
-        {
-          id: 1,
-          tags: { name: 'Monumento 1', historic: 'monument' },
-          lat: -23.55,
-          lon: -46.63,
-        },
-      ];
       mockedAxios.post.mockResolvedValueOnce({
-        data: { elements: mockElements },
+        data: {
+          elements: [
+            {
+              type: 'node',
+              id: 1180813951,
+              lat: -23.55,
+              lon: -46.63,
+              tags: { historic: 'monument', name: 'Monumento 1' },
+            },
+          ],
+        },
       });
 
       const result = await service.findNearby(-23.55, -46.63);
@@ -91,7 +93,7 @@ describe('HistoryService', () => {
 
       expect(result).toBe(mockStory);
       expect(mockPrismaService.locationStory.findUnique).toHaveBeenCalledWith({
-        where: { name: 'Test Place' },
+        where: { name: 'Test Place_pt-BR' },
       });
     });
 
