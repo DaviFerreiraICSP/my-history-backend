@@ -22,4 +22,8 @@ export class GetStoryDto {
   @IsString()
   @IsOptional()
   lang?: string;
+
+  @IsString()
+  @IsOptional()
+  aiGuide?: string;
 }
