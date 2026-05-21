@@ -76,36 +76,39 @@ export class HistoryService {
   }
 
   async findNearby(lat: number, lon: number) {
-    this.logger.log(`Finding nearby historical sites for ${lat}, ${lon} using Overpass API`);
+    this.logger.log(`Finding nearby historical sites for ${lat}, ${lon} using Wikipedia Geosearch`);
 
-    const query = `[out:json][timeout:25];(node["historic"](around:3000,${lat},${lon});way["historic"](around:3000,${lat},${lon});relation["historic"](around:3000,${lat},${lon}););out center 20;`;
+    const wikiSearch = async (lang: string) => {
+      const response = await axios.get(`https://${lang}.wikipedia.org/w/api.php`, {
+        params: {
+          action: 'query',
+          list: 'geosearch',
+          gscoord: `${lat}|${lon}`,
+          gsradius: 3000,
+          gslimit: 20,
+          format: 'json',
+        },
+        headers: { 'User-Agent': 'OurHistoryApp/1.0 (contact@example.com)' },
+        timeout: 12000,
+      });
+      return response.data?.query?.geosearch || [];
+    };
 
     try {
-      const response = await axios.post(
-        'https://overpass-api.de/api/interpreter',
-        `data=${encodeURIComponent(query)}`,
-        {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': 'OurHistoryApp/1.0 (contact@example.com)',
-          },
-          timeout: 30000,
-        },
-      );
+      let places = await wikiSearch('pt');
+      if (places.length === 0) {
+        places = await wikiSearch('en');
+      }
 
-      const elements: OverpassElement[] = response.data.elements || [];
-
-      return elements
-        .filter((el) => el.tags?.name)
-        .map((el) => ({
-          id: String(el.id),
-          name: el.tags.name,
-          lat: el.lat ?? el.center?.lat ?? 0,
-          lon: el.lon ?? el.center?.lon ?? 0,
-          type: el.tags.historic || el.tags.tourism || 'landmark',
-        }));
+      return places.map((p: any) => ({
+        id: String(p.pageid),
+        name: p.title,
+        lat: p.lat,
+        lon: p.lon,
+        type: 'historical_landmark',
+      }));
     } catch (error) {
-      this.logger.error('Overpass API Error', error.message);
+      this.logger.error('Wikipedia Geosearch Error', error.message);
       return this.findNearbyWikiData(lat, lon);
     }
   }
