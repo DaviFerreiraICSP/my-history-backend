@@ -79,67 +79,35 @@ describe('HistoryService', () => {
   });
 
   describe('getStory', () => {
-    it('should return cached story if available', async () => {
-      const mockStory = {
-        id: '1',
-        name: 'Test Place',
-        story: 'Cached Story',
-        latitude: 0,
-        longitude: 0,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      mockPrismaService.locationStory.findUnique.mockResolvedValueOnce(
-        mockStory,
-      );
-
-      const result = await service.getStory('Test Place', 0, 0);
-
-      expect(result).toBe(mockStory);
-      expect(mockPrismaService.locationStory.findUnique).toHaveBeenCalledWith({
-        where: { name: 'Test Place_pt-BR' },
-      });
-    });
-
-    it('should generate and save new story if not in cache', async () => {
-      mockPrismaService.locationStory.findUnique.mockResolvedValueOnce(null);
-
+    it('should generate and return story with wiki data', async () => {
       const mockModel = {
         generateContent: jest.fn().mockResolvedValueOnce({
-          response: { text: () => 'New AI Story' },
+          response: { text: () => 'História gerada pela IA' },
         }),
       };
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       (service as any).model = mockModel;
 
-      const mockCreatedStory = {
-        id: '2',
-        name: 'New Place',
-        story: 'New AI Story',
-        latitude: 1,
-        longitude: 2,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      mockPrismaService.locationStory.create.mockResolvedValueOnce(
-        mockCreatedStory,
-      );
+      mockedAxios.get.mockResolvedValueOnce({
+        data: { query: { pages: [{ fullurl: 'https://pt.wikipedia.org/wiki/Test', original: { source: 'https://foto.jpg' } }] } },
+      });
 
-      const result = await service.getStory('New Place', 1, 2);
+      const result = await service.getStory('Test Place', 0, 0, 'pt-BR');
 
-      expect(result).toBe(mockCreatedStory);
-      expect(mockPrismaService.locationStory.create).toHaveBeenCalled();
+      expect(result.story).toBe('História gerada pela IA');
+      expect(result.wikiUrl).toContain('wikipedia');
     });
 
     it('should throw InternalServerErrorException when Gemini fails', async () => {
-      mockPrismaService.locationStory.findUnique.mockResolvedValueOnce(null);
       const mockModel = {
-        generateContent: jest
-          .fn()
-          .mockRejectedValueOnce(new Error('AI Failed')),
+        generateContent: jest.fn().mockRejectedValueOnce(new Error('AI Failed')),
       };
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       (service as any).model = mockModel;
+
+      mockedAxios.get.mockResolvedValueOnce({
+        data: { query: { pages: [{ missing: true }] } },
+      });
 
       await expect(async () =>
         service.getStory('Fail Place', 0, 0),
