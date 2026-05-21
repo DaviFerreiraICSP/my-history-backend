@@ -211,7 +211,7 @@ export class HistoryService {
       const configPath = path.resolve(process.cwd(), '..', 'history_ai_config_', 'master_prompt.txt');
       promptTemplate = fs.readFileSync(configPath, 'utf-8');
     } catch (e) {
-      promptTemplate = 'Aja como um guia turístico historiador especializado. Escreva uma crônica detalhada (3-4 parágrafos) sobre o local: {{PLACE_NAME}}. Fale diretamente com o leitor no idioma: {{LANGUAGE}}. Inclua fatos históricos e curiosidades.';
+      promptTemplate = 'Você é um historiador especializado em história urbana. Escreva um texto histórico objetivo (3 parágrafos) sobre: {{PLACE_NAME}}. Tom factual, sem linguagem poética. Inclua origem, data, responsáveis e evolução histórica. Idioma: {{LANGUAGE}}.';
     }
 
     const prompt = promptTemplate
