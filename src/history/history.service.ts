@@ -150,9 +150,10 @@ export class HistoryService {
       );
 
       // Wonders first; remove any Wikipedia duplicate that matches a wonder name
+      // Remove artigos Wikipedia cujas coordenadas estejam a menos de 500m de uma maravilha
       const wikiFiltered = wikiPlaces.filter(
         p => !nearbyWonders.some(
-          w => w.name.toLowerCase() === p.name.toLowerCase(),
+          w => this.haversineKm(p.lat, p.lon, w.lat, w.lon) < 0.5,
         ),
       );
 
@@ -181,7 +182,6 @@ export class HistoryService {
     if (/universidade|university|faculdade|faculty|\bcollege\b|liceu|academia de/.test(t)) return 'university';
     if (/\bponte\b|\bbridge\b|viaduto|viaduct|aqueduto|aqueduct/.test(t)) return 'bridge';
     if (/teatro|theatre|theater|ópera|opera house|anfiteatro|amphith/.test(t)) return 'theater';
-    if (/coliseu|colosseum|acrópole|acropolis|pirâmide|pyramid|taj mahal|machu picchu|angkor|grande muralha|maravilha do mundo/.test(t)) return 'wonder';
     if (/proclamação|proclamation|tratado de |declaração de independência|declaration of independence/.test(t)) return 'event_site';
     if (/palácio|palacio|palace/.test(t)) return 'monument';
     if (/praça|square|plaza|largo|jardim|parque/.test(t)) return 'monument';
@@ -246,10 +246,9 @@ export class HistoryService {
   async getStory(name: string, lat: number, lon: number, lang: string = 'pt-BR', aiGuide: string = 'historian') {
     this.logger.log(`Getting story for ${name} in ${lang} with guide: ${aiGuide}`);
 
-    const [storyText, wikiData] = await Promise.all([
-      this.generateStoryContent(name, lat, lon, lang, aiGuide),
-      this.fetchWikiData(name),
-    ]);
+    // Busca Wikipedia primeiro — o extrato é usado como âncora factual no prompt
+    const wikiData = await this.fetchWikiData(name);
+    const storyText = await this.generateStoryContent(name, lat, lon, lang, aiGuide, wikiData.extract);
 
     return {
       story: storyText,
@@ -267,10 +266,14 @@ export class HistoryService {
     return personas[aiGuide] || personas.historian;
   }
 
-  private async generateStoryContent(name: string, lat: number, lon: number, lang: string, aiGuide: string): Promise<string> {
+  private async generateStoryContent(name: string, lat: number, lon: number, lang: string, aiGuide: string, wikiExtract: string | null): Promise<string> {
     const personaInstruction = this.getPersonaInstruction(aiGuide);
 
-    const prompt = `${personaInstruction}
+    const groundingBlock = wikiExtract
+      ? `\n\nCONTEXTO FACTUAL (fonte: Wikipedia — use como base obrigatória):\n"${wikiExtract}"\n\nRegras: use APENAS os fatos acima. Para datas ou nomes incertos, use "aproximadamente" ou "estima-se". Nunca invente eventos, personagens ou detalhes ausentes do contexto.`
+      : `\n\nAVISO: Sem dados verificados para este local. Use linguagem cautelosa ("estima-se", "segundo registros", "possivelmente"). Nunca invente datas ou nomes com certeza.`;
+
+    const prompt = `${personaInstruction}${groundingBlock}
 
 Escreva exatamente 3 parágrafos sobre o local histórico "${name}" (coordenadas: ${lat}, ${lon}).
 Inclua: origem e data aproximada, quem construiu ou por que é importante, e como chegou até hoje.
@@ -286,7 +289,7 @@ Não use saudações, títulos ou introduções — comece direto a história.`;
     }
   }
 
-  private async fetchWikiData(name: string): Promise<{ photoUrl: string | null, wikiUrl: string | null }> {
+  private async fetchWikiData(name: string): Promise<{ photoUrl: string | null, wikiUrl: string | null, extract: string | null }> {
     const headers = { 'User-Agent': 'OurHistoryApp/1.0 (contact@example.com)' };
 
     const fetchCommonsPhoto = async (): Promise<string | null> => {
@@ -314,14 +317,17 @@ Não use saudações, títulos ou introduções — comece direto a história.`;
       return photo?.imageinfo?.[0]?.thumburl || null;
     };
 
-    const fetchWikiUrl = async (lang: string): Promise<string | null> => {
+    const fetchWikiArticle = async (lang: string): Promise<{ wikiUrl: string | null, extract: string | null }> => {
       const res = await axios.get(`https://${lang}.wikipedia.org/w/api.php`, {
         params: {
           action: 'query',
           format: 'json',
           formatversion: 2,
-          prop: 'info',
+          prop: 'info|extracts',
           inprop: 'url',
+          exintro: true,
+          explaintext: true,
+          exsentences: 6,
           titles: name,
           origin: '*',
         },
@@ -329,20 +335,24 @@ Não use saudações, títulos ou introduções — comece direto a história.`;
         timeout: 8000,
       });
       const page = res.data?.query?.pages?.[0];
-      if (!page || page.missing) return null;
-      return page.fullurl || null;
+      if (!page || page.missing) return { wikiUrl: null, extract: null };
+      return { wikiUrl: page.fullurl || null, extract: page.extract || null };
     };
 
     try {
-      const [photoUrl, ptUrl, enUrl] = await Promise.all([
+      const [photoUrl, ptData, enData] = await Promise.all([
         fetchCommonsPhoto().catch(() => null),
-        fetchWikiUrl('pt').catch(() => null),
-        fetchWikiUrl('en').catch(() => null),
+        fetchWikiArticle('pt').catch(() => ({ wikiUrl: null, extract: null })),
+        fetchWikiArticle('en').catch(() => ({ wikiUrl: null, extract: null })),
       ]);
-      return { photoUrl, wikiUrl: ptUrl || enUrl };
+      return {
+        photoUrl,
+        wikiUrl: ptData.wikiUrl || enData.wikiUrl,
+        extract: enData.extract || ptData.extract,
+      };
     } catch (error) {
       this.logger.warn(`Could not fetch wiki data for ${name}`, error.message);
-      return { photoUrl: null, wikiUrl: null };
+      return { photoUrl: null, wikiUrl: null, extract: null };
     }
   }
 }
