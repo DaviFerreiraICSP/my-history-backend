@@ -13,8 +13,6 @@ import {
 } from '@google/generative-ai';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import * as fs from 'fs';
-import * as path from 'path';
 
 interface OverpassElement {
   id: number;
@@ -137,6 +135,11 @@ export class HistoryService {
     if (/campo de batalha|battlefield/.test(t)) return 'battlefield';
     if (/estação|station|terminal ferroviário|terminal rodoviário|metrô|metro|ferrovia/.test(t)) return 'station';
     if (/\bbairro\b|distrito|district|vila |vila$/.test(t)) return 'district';
+    if (/universidade|university|faculdade|faculty|\bcollege\b|liceu|academia de/.test(t)) return 'university';
+    if (/\bponte\b|\bbridge\b|viaduto|viaduct|aqueduto|aqueduct/.test(t)) return 'bridge';
+    if (/teatro|theatre|theater|ópera|opera house|anfiteatro|amphith/.test(t)) return 'theater';
+    if (/coliseu|colosseum|acrópole|acropolis|pirâmide|pyramid|taj mahal|machu picchu|angkor|grande muralha|maravilha do mundo/.test(t)) return 'wonder';
+    if (/proclamação|proclamation|tratado de |declaração de independência|declaration of independence/.test(t)) return 'event_site';
     if (/palácio|palacio|palace/.test(t)) return 'monument';
     if (/praça|square|plaza|largo|jardim|parque/.test(t)) return 'monument';
     if (/monumento|monument|estátua|statue|obelisco/.test(t)) return 'monument';
@@ -188,15 +191,20 @@ export class HistoryService {
       'fort': 'Forte Histórico',
       'museum': 'Museu',
       'church': 'Igreja Histórica',
+      'university': 'Universidade Histórica',
+      'bridge': 'Ponte Histórica',
+      'theater': 'Teatro / Ópera',
+      'wonder': 'Maravilha do Mundo',
+      'event_site': 'Local de Evento Histórico',
     };
     return types[type] || 'Ponto de Interesse';
   }
 
-  async getStory(name: string, lat: number, lon: number, lang: string = 'pt-BR') {
-    this.logger.log(`Getting story for ${name} in ${lang}`);
+  async getStory(name: string, lat: number, lon: number, lang: string = 'pt-BR', aiGuide: string = 'historian') {
+    this.logger.log(`Getting story for ${name} in ${lang} with guide: ${aiGuide}`);
 
     const [storyText, wikiData] = await Promise.all([
-      this.generateStoryContent(name, lat, lon, lang),
+      this.generateStoryContent(name, lat, lon, lang, aiGuide),
       this.fetchWikiData(name),
     ]);
 
@@ -207,20 +215,24 @@ export class HistoryService {
     };
   }
 
-  private async generateStoryContent(name: string, lat: number, lon: number, lang: string): Promise<string> {
-    let promptTemplate = '';
-    try {
-      const configPath = path.resolve(process.cwd(), '..', 'history_ai_config_', 'master_prompt.txt');
-      promptTemplate = fs.readFileSync(configPath, 'utf-8');
-    } catch (e) {
-      promptTemplate = 'Você é um historiador especializado em história urbana. Escreva um texto histórico objetivo (3 parágrafos) sobre: {{PLACE_NAME}}. Tom factual, sem linguagem poética. Inclua origem, data, responsáveis e evolução histórica. Idioma: {{LANGUAGE}}.';
-    }
+  private getPersonaInstruction(aiGuide: string): string {
+    const personas: Record<string, string> = {
+      historian: 'Você é um historiador apaixonado e especialista. Escreva com rigor factual, revelando curiosidades e contexto da época. Tom envolvente mas preciso, como um documentário de alto nível.',
+      professor: 'Você é um professor de história didático e empolgante. Explique o contexto histórico de forma clara, use comparações com o presente e analogias simples. Tom de aula interessante que prende a atenção, acessível a qualquer pessoa.',
+      child: 'Você é um contador de histórias para crianças de 6 a 10 anos. Use linguagem simples, frases curtas, palavras fáceis e uma pitada de aventura e magia. Fale como se contasse um conto de fadas histórico — deixe as crianças curiosas e animadas para aprender mais.',
+    };
+    return personas[aiGuide] || personas.historian;
+  }
 
-    const prompt = promptTemplate
-      .replace('{{PLACE_NAME}}', name)
-      .replace('{{LAT}}', lat.toString())
-      .replace('{{LON}}', lon.toString())
-      .replace('{{LANGUAGE}}', lang);
+  private async generateStoryContent(name: string, lat: number, lon: number, lang: string, aiGuide: string): Promise<string> {
+    const personaInstruction = this.getPersonaInstruction(aiGuide);
+
+    const prompt = `${personaInstruction}
+
+Escreva exatamente 3 parágrafos sobre o local histórico "${name}" (coordenadas: ${lat}, ${lon}).
+Inclua: origem e data aproximada, quem construiu ou por que é importante, e como chegou até hoje.
+Responda no idioma: ${lang}.
+Não use saudações, títulos ou introduções — comece direto a história.`;
 
     try {
       const result = await this.model.generateContent(prompt);

@@ -20,6 +20,7 @@ export class HistoryController {
       query.lat ?? 0,
       query.lon ?? 0,
       query.lang || 'pt-BR',
+      query.aiGuide || 'historian',
     );
   }
 }
