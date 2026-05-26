@@ -1,4 +1,4 @@
-import { IsLatitude, IsLongitude } from 'class-validator';
+import { IsLatitude, IsLongitude, IsOptional, IsString } from 'class-validator';
 
 export class GetNearbyDto {
   @IsLatitude()
@@ -6,4 +6,8 @@ export class GetNearbyDto {
 
   @IsLongitude()
   lon: number;
+
+  @IsOptional()
+  @IsString()
+  lang?: string;
 }

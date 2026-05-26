@@ -32,6 +32,17 @@ interface OverpassResponse {
   elements: OverpassElement[];
 }
 
+const SEVEN_WONDERS = [
+  { id: 'wonder_colosseum',       name: 'Coliseu',                 lat:  41.8902, lon:  12.4922,  type: 'wonder' },
+  { id: 'wonder_great_wall',      name: 'Grande Muralha da China', lat:  40.4319, lon: 116.5704,  type: 'wonder' },
+  { id: 'wonder_christ_redeemer', name: 'Cristo Redentor',         lat: -22.9519, lon: -43.2105,  type: 'wonder' },
+  { id: 'wonder_machu_picchu',    name: 'Machu Picchu',            lat: -13.1631, lon: -72.5450,  type: 'wonder' },
+  { id: 'wonder_chichen_itza',    name: 'Chichen Itzá',            lat:  20.6843, lon: -88.5678,  type: 'wonder' },
+  { id: 'wonder_taj_mahal',       name: 'Taj Mahal',               lat:  27.1751, lon:  78.0421,  type: 'wonder' },
+  { id: 'wonder_petra',           name: 'Petra',                   lat:  30.3285, lon:  35.4444,  type: 'wonder' },
+  { id: 'wonder_pyramid_giza',    name: 'Pirâmides de Gizé',       lat:  29.9792, lon:  31.1342,  type: 'wonder' },
+];
+
 @Injectable()
 export class HistoryService {
   private readonly logger = new Logger(HistoryService.name);
@@ -73,7 +84,25 @@ export class HistoryService {
     });
   }
 
-  async findNearby(lat: number, lon: number) {
+  private haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  private toWikiLang(appLang: string): string {
+    const map: Record<string, string> = {
+      'pt-BR': 'pt', 'es-ES': 'es', 'fr-FR': 'fr',
+      'de-DE': 'de', 'zh-CN': 'zh', 'ja-JP': 'ja', 'ru-RU': 'ru',
+    };
+    return map[appLang] || 'en';
+  }
+
+  async findNearby(lat: number, lon: number, lang: string = 'en-US') {
     this.logger.log(`Finding nearby historical sites for ${lat}, ${lon} using Wikipedia Geosearch`);
 
     const wikiSearch = async (lang: string) => {
@@ -82,38 +111,52 @@ export class HistoryService {
           action: 'query',
           list: 'geosearch',
           gscoord: `${lat}|${lon}`,
-          gsradius: 3000,
-          gslimit: 20,
+          gsradius: 10000,
+          gslimit: 50,
           format: 'json',
         },
         headers: { 'User-Agent': 'OurHistoryApp/1.0 (contact@example.com)' },
-        timeout: 12000,
+        timeout: 8000,
       });
       return response.data?.query?.geosearch || [];
     };
 
     try {
-      let places = await wikiSearch('pt');
-      if (places.length === 0) {
-        places = await wikiSearch('en');
-      }
+      // Sempre busca en (melhor cobertura global) + idioma local se diferente
+      const localLang = this.toWikiLang(lang);
+      const langList = localLang === 'en' ? ['en'] : ['en', localLang];
+      const results = await Promise.all(langList.map(l => wikiSearch(l).catch(() => [])));
+      const [enPlaces, ...rest] = results;
+      const ptPlaces = rest[0] ?? [];
 
-      // Deduplicar por coordenadas exatas (artigos genéricos da Wikipedia usam coord da cidade)
-      const seen = new Set<string>();
-      const unique = places.filter((p: any) => {
-        const key = `${p.lat.toFixed(4)},${p.lon.toFixed(4)}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
+      // Deduplicar por pageid (mais confiável que coordenadas)
+      const seen = new Set<number>();
+      const unique = [...ptPlaces, ...enPlaces].filter((p: any) => {
+        if (seen.has(p.pageid)) return false;
+        seen.add(p.pageid);
         return true;
       });
 
-      return unique.map((p: any) => ({
+      const wikiPlaces = unique.map((p: any) => ({
         id: String(p.pageid),
         name: this.cleanWikiTitle(p.title),
         lat: p.lat,
         lon: p.lon,
         type: this.inferTypeFromTitle(p.title),
       }));
+
+      const nearbyWonders = SEVEN_WONDERS.filter(
+        w => this.haversineKm(lat, lon, w.lat, w.lon) <= 50,
+      );
+
+      // Wonders first; remove any Wikipedia duplicate that matches a wonder name
+      const wikiFiltered = wikiPlaces.filter(
+        p => !nearbyWonders.some(
+          w => w.name.toLowerCase() === p.name.toLowerCase(),
+        ),
+      );
+
+      return [...nearbyWonders, ...wikiFiltered];
     } catch (error) {
       this.logger.error('Wikipedia Geosearch Error', error.message);
       return this.findNearbyWikiData(lat, lon);
@@ -246,25 +289,57 @@ Não use saudações, títulos ou introduções — comece direto a história.`;
   private async fetchWikiData(name: string): Promise<{ photoUrl: string | null, wikiUrl: string | null }> {
     const headers = { 'User-Agent': 'OurHistoryApp/1.0 (contact@example.com)' };
 
-    const fetchExact = async (lang: string) => {
-      const url = `https://${lang}.wikipedia.org/w/api.php?action=query&format=json&formatversion=2&prop=pageimages|info&piprop=original&inprop=url&titles=${encodeURIComponent(name)}&origin=*`;
-      const res = await axios.get(url, { headers, timeout: 8000 });
+    const fetchCommonsPhoto = async (): Promise<string | null> => {
+      const res = await axios.get('https://commons.wikimedia.org/w/api.php', {
+        params: {
+          action: 'query',
+          generator: 'search',
+          gsrsearch: name,
+          gsrnamespace: 6,
+          gsrlimit: 8,
+          prop: 'imageinfo',
+          iiprop: 'url|mime',
+          iiurlwidth: 800,
+          format: 'json',
+          origin: '*',
+        },
+        headers,
+        timeout: 8000,
+      });
+      const pages = Object.values(res.data?.query?.pages || {}) as any[];
+      const photo = pages.find(p => {
+        const mime: string = p.imageinfo?.[0]?.mime || '';
+        return mime === 'image/jpeg' || mime === 'image/png' || mime === 'image/webp';
+      });
+      return photo?.imageinfo?.[0]?.thumburl || null;
+    };
+
+    const fetchWikiUrl = async (lang: string): Promise<string | null> => {
+      const res = await axios.get(`https://${lang}.wikipedia.org/w/api.php`, {
+        params: {
+          action: 'query',
+          format: 'json',
+          formatversion: 2,
+          prop: 'info',
+          inprop: 'url',
+          titles: name,
+          origin: '*',
+        },
+        headers,
+        timeout: 8000,
+      });
       const page = res.data?.query?.pages?.[0];
       if (!page || page.missing) return null;
-      return { photoUrl: page?.original?.source || null, wikiUrl: page?.fullurl || null };
+      return page.fullurl || null;
     };
 
     try {
-      // Prioriza pt.wikipedia.org (fonte dos nossos locais) com exact match
-      const pt = await fetchExact('pt');
-      if (pt?.wikiUrl) return pt;
-
-      // Tenta en.wikipedia.org com exact match
-      const en = await fetchExact('en');
-      if (en?.wikiUrl) return en;
-
-      // Sem resultado exato: retorna null em vez de busca fuzzy (evita foto/link errado)
-      return { photoUrl: null, wikiUrl: null };
+      const [photoUrl, ptUrl, enUrl] = await Promise.all([
+        fetchCommonsPhoto().catch(() => null),
+        fetchWikiUrl('pt').catch(() => null),
+        fetchWikiUrl('en').catch(() => null),
+      ]);
+      return { photoUrl, wikiUrl: ptUrl || enUrl };
     } catch (error) {
       this.logger.warn(`Could not fetch wiki data for ${name}`, error.message);
       return { photoUrl: null, wikiUrl: null };
