@@ -1,16 +1,14 @@
 import { Controller, Get, Query } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { HistoryService } from './history.service';
-import { GetNearbyDto } from './dto/get-nearby.dto';
 import { GetStoryDto } from './dto/get-story.dto';
+
 @Controller('history')
 export class HistoryController {
   constructor(private readonly historyService: HistoryService) {}
 
-  @Get('nearby')
-  async getNearby(@Query() query: GetNearbyDto): Promise<any[]> {
-    return this.historyService.findNearby(query.lat, query.lon, query.lang);
-  }
-
+  // Stricter limit on the AI endpoint: max 3 stories per 10s, 10 per minute
+  @Throttle({ short: { ttl: 10000, limit: 3 }, long: { ttl: 60000, limit: 10 } })
   @Get('story')
   async getStory(@Query() query: GetStoryDto): Promise<any> {
     return this.historyService.getStory(

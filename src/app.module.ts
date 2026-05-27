@@ -12,8 +12,14 @@ import { PrismaModule } from './prisma/prisma.module';
     ConfigModule.forRoot(),
     ThrottlerModule.forRoot([
       {
-        ttl: 60000,
-        limit: 10,
+        name: 'short',
+        ttl: 10000,  // 10s — burst protection
+        limit: 5,
+      },
+      {
+        name: 'long',
+        ttl: 60000,  // 1min — sustained limit
+        limit: 30,
       },
     ]),
     HistoryModule,
