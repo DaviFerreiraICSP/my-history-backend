@@ -123,42 +123,19 @@ Não use saudações, títulos ou introduções — comece direto a história.`;
   private async fetchWikiData(name: string): Promise<{ photoUrl: string | null, wikiUrl: string | null, extract: string | null }> {
     const headers = { 'User-Agent': 'OurHistoryApp/1.0 (contact@example.com)' };
 
-    const fetchCommonsPhoto = async (): Promise<string | null> => {
-      const res = await axios.get('https://commons.wikimedia.org/w/api.php', {
-        params: {
-          action: 'query',
-          generator: 'search',
-          gsrsearch: name,
-          gsrnamespace: 6,
-          gsrlimit: 8,
-          prop: 'imageinfo',
-          iiprop: 'url|mime',
-          iiurlwidth: 800,
-          format: 'json',
-          origin: '*',
-        },
-        headers,
-        timeout: 8000,
-      });
-      const pages = Object.values(res.data?.query?.pages || {}) as any[];
-      const photo = pages.find(p => {
-        const mime: string = p.imageinfo?.[0]?.mime || '';
-        return mime === 'image/jpeg' || mime === 'image/png' || mime === 'image/webp';
-      });
-      return photo?.imageinfo?.[0]?.thumburl || null;
-    };
-
-    const fetchWikiArticle = async (lang: string): Promise<{ wikiUrl: string | null, extract: string | null }> => {
+    const fetchWikiArticle = async (lang: string): Promise<{ wikiUrl: string | null, extract: string | null, photoUrl: string | null }> => {
       const res = await axios.get(`https://${lang}.wikipedia.org/w/api.php`, {
         params: {
           action: 'query',
           format: 'json',
           formatversion: 2,
-          prop: 'info|extracts',
+          prop: 'info|extracts|pageimages',
           inprop: 'url',
           exintro: true,
           explaintext: true,
           exsentences: 6,
+          pithumbsize: 800,
+          pilicense: 'any',
           titles: name,
           origin: '*',
         },
@@ -166,18 +143,21 @@ Não use saudações, títulos ou introduções — comece direto a história.`;
         timeout: 8000,
       });
       const page = res.data?.query?.pages?.[0];
-      if (!page || page.missing) return { wikiUrl: null, extract: null };
-      return { wikiUrl: page.fullurl || null, extract: page.extract || null };
+      if (!page || page.missing) return { wikiUrl: null, extract: null, photoUrl: null };
+      return {
+        wikiUrl: page.fullurl || null,
+        extract: page.extract || null,
+        photoUrl: page.thumbnail?.source || null,
+      };
     };
 
     try {
-      const [photoUrl, ptData, enData] = await Promise.all([
-        fetchCommonsPhoto().catch(() => null),
-        fetchWikiArticle('pt').catch(() => ({ wikiUrl: null, extract: null })),
-        fetchWikiArticle('en').catch(() => ({ wikiUrl: null, extract: null })),
+      const [ptData, enData] = await Promise.all([
+        fetchWikiArticle('pt').catch(() => ({ wikiUrl: null, extract: null, photoUrl: null })),
+        fetchWikiArticle('en').catch(() => ({ wikiUrl: null, extract: null, photoUrl: null })),
       ]);
       return {
-        photoUrl,
+        photoUrl: enData.photoUrl || ptData.photoUrl,
         wikiUrl: ptData.wikiUrl || enData.wikiUrl,
         extract: enData.extract || ptData.extract,
       };
