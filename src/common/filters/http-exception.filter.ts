@@ -40,7 +40,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const errorResponse: ErrorResponse = {
       statusCode: status,
       timestamp: new Date().toISOString(),
-      path: request.url,
+      path: request.path,
       message: (message as string | string[]) || 'Internal server error',
     };
 

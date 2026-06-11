@@ -74,12 +74,20 @@ export class HistoryService {
     return types[type] || 'Ponto de Interesse';
   }
 
-  async getStory(name: string, lat: number, lon: number, lang: string = 'pt-BR', aiGuide: string = 'historian') {
-    this.logger.log(`Getting story for ${name} in ${lang} with guide: ${aiGuide}`);
+  private sanitizeName(raw: string): string {
+    return raw
+      .replace(/[\r\n\t]/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+      .slice(0, 200);
+  }
 
-    // Busca Wikipedia primeiro — o extrato é usado como âncora factual no prompt
-    const wikiData = await this.fetchWikiData(name);
-    const storyText = await this.generateStoryContent(name, lat, lon, lang, aiGuide, wikiData.extract);
+  async getStory(name: string, lat: number, lon: number, lang: string = 'pt-BR', aiGuide: string = 'historian') {
+    const safeName = this.sanitizeName(name);
+    this.logger.log(`Getting story for ${safeName} in ${lang} with guide: ${aiGuide}`);
+
+    const wikiData = await this.fetchWikiData(safeName);
+    const storyText = await this.generateStoryContent(safeName, lat, lon, lang, aiGuide, wikiData.extract);
 
     return {
       story: storyText,

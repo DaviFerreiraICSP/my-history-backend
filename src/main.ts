@@ -11,6 +11,8 @@ async function bootstrap() {
   app.use(helmet());
 
   const allowedOrigins = [
+    'https://ourhistory.dev',
+    'https://www.ourhistory.dev',
     'https://historyfrontend.vercel.app',
     'https://historyfrontend-daviferreiraicsps-projects.vercel.app',
     /^http:\/\/localhost:\d+$/,
