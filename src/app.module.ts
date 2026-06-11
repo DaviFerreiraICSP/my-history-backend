@@ -6,6 +6,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HistoryModule } from './history/history.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { FeedbackModule } from './feedback/feedback.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { PrismaModule } from './prisma/prisma.module';
     ]),
     HistoryModule,
     PrismaModule,
+    FeedbackModule,
   ],
   controllers: [AppController],
   providers: [
