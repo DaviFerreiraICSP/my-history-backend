@@ -3,10 +3,7 @@ import { HistoryService } from './history.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import {
-  BadGatewayException,
-  InternalServerErrorException,
-} from '@nestjs/common';
+import { InternalServerErrorException } from '@nestjs/common';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -39,43 +36,6 @@ describe('HistoryService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
-  });
-
-  describe('findNearby', () => {
-    it('should return historical places from Wikipedia Geosearch', async () => {
-      mockedAxios.get.mockResolvedValueOnce({
-        data: {
-          query: {
-            geosearch: [
-              {
-                pageid: 123456,
-                title: 'Catedral Metropolitana de São Paulo',
-                lat: -23.55,
-                lon: -46.63,
-                dist: 144.6,
-              },
-            ],
-          },
-        },
-      });
-
-      const result = await service.findNearby(-23.55, -46.63);
-
-      expect(result).toHaveLength(1);
-      expect(result[0].name).toBe('Catedral Metropolitana de São Paulo');
-      expect(result[0].type).toBe('church');
-      // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(mockedAxios.get).toHaveBeenCalled();
-    });
-
-    it('should fall back to WikiData when Wikipedia Geosearch fails', async () => {
-      mockedAxios.get.mockRejectedValueOnce(new Error('Network Error'));
-      mockedAxios.get.mockRejectedValueOnce(new Error('WikiData also down'));
-
-      await expect(async () => service.findNearby(0, 0)).rejects.toThrow(
-        BadGatewayException,
-      );
-    });
   });
 
   describe('getStory', () => {

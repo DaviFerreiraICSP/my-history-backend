@@ -9,7 +9,26 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.use(helmet());
-  app.enableCors();
+
+  const allowedOrigins = [
+    'https://ourhistory.dev',
+    'https://www.ourhistory.dev',
+    'https://historyfrontend.vercel.app',
+    'https://historyfrontend-daviferreiraicsps-projects.vercel.app',
+    /^http:\/\/localhost:\d+$/,
+    /^http:\/\/127\.0\.0\.1:\d+$/,
+  ];
+  app.enableCors({
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+      if (!origin) return callback(null, true);
+      const allowed = allowedOrigins.some(o =>
+        typeof o === 'string' ? o === origin : o.test(origin)
+      );
+      callback(allowed ? null : new Error('Not allowed by CORS'), allowed);
+    },
+    methods: ['GET'],
+    credentials: false,
+  });
 
   app.useGlobalFilters(new HttpExceptionFilter());
 

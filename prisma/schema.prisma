@@ -7,6 +7,14 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Feedback {
+  id        Int      @id @default(autoincrement())
+  rating    Int
+  message   String?
+  lang      String   @default("pt-BR")
+  createdAt DateTime @default(now())
+}
+
 model LocationStory {
   id        String   @id @default(uuid())
   name      String   @unique
